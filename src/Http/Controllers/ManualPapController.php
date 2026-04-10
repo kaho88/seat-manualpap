@@ -10,10 +10,21 @@ use Illuminate\View\View;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Kassie\Calendar\Models\Operation;
 use Seat\Kassie\Calendar\Models\Tag;
+use Seat\ManualPap\Models\CorporationWhitelist;
 use Seat\Web\Models\User;
 
 class ManualPapController extends Controller
 {
+    /**
+     * Get whitelisted corporation IDs from the database.
+     *
+     * @return int[]
+     */
+    public static function getWhitelistedCorpIds(): array
+    {
+        return CorporationWhitelist::pluck('corporation_id')->toArray();
+    }
+
     // -------------------------------------------------------
     // Single PAP (existing)
     // -------------------------------------------------------
@@ -123,9 +134,109 @@ class ManualPapController extends Controller
         return view('manualpap::report', compact('results', 'month', 'year', 'availableMonths'));
     }
 
+    // -------------------------------------------------------
+    // Inactive Report (no PAPs in last 3 months)
+    // -------------------------------------------------------
+
+    public function inactive(): View
+    {
+        $corporationIds = self::getWhitelistedCorpIds();
+
+        $results = $this->buildInactiveData($corporationIds);
+
+        return view('manualpap::inactive', compact('results', 'corporationIds'));
+    }
+
+    /**
+     * Build a list of main characters from whitelisted corporations
+     * who have had ZERO PAPs in the last 3 full calendar months.
+     *
+     * @param int[] $corporationIds
+     */
+    public function buildInactiveData(array $corporationIds): array
+    {
+        if (empty($corporationIds)) {
+            return [];
+        }
+
+        // Determine the last 3 full months
+        $months = [];
+        for ($i = 1; $i <= 3; $i++) {
+            $date = Carbon::now()->subMonthsNoOverflow($i)->startOfMonth();
+            $months[] = ['month' => $date->month, 'year' => $date->year];
+        }
+
+        // Step 1: Get all main_character_ids from users whose main character
+        //         belongs to a whitelisted corporation.
+        $mainCharIds = DB::table('users')
+            ->join('character_infos', 'users.main_character_id', '=', 'character_infos.character_id')
+            ->whereIn('character_infos.corporation_id', $corporationIds)
+            ->whereNotNull('users.main_character_id')
+            ->pluck('users.main_character_id')
+            ->unique()
+            ->toArray();
+
+        if (empty($mainCharIds)) {
+            return [];
+        }
+
+        // Step 2: Find main characters that DO have PAPs in any of the last 3 months
+        $activeQuery = DB::table('kassie_calendar_paps');
+        foreach ($months as $m) {
+            $activeQuery->orWhere(function ($q) use ($m) {
+                $q->where('month', $m['month'])->where('year', $m['year']);
+            });
+        }
+        $activeCharIds = $activeQuery
+            ->whereIn('character_id', $mainCharIds)
+            ->pluck('character_id')
+            ->unique()
+            ->toArray();
+
+        // Step 3: Inactive = whitelisted mains NOT in the active set
+        $inactiveCharIds = array_diff($mainCharIds, $activeCharIds);
+
+        if (empty($inactiveCharIds)) {
+            return [];
+        }
+
+        // Step 4: Load character names and corporation names
+        $chars = DB::table('character_infos')
+            ->whereIn('character_id', $inactiveCharIds)
+            ->get()
+            ->keyBy('character_id');
+
+        $corpIds = $chars->pluck('corporation_id')->unique()->filter()->toArray();
+        $corpNames = DB::table('corporation_infos')
+            ->whereIn('corporation_id', $corpIds)
+            ->pluck('name', 'corporation_id')
+            ->toArray();
+
+        // Step 5: Build result
+        $results = [];
+        foreach ($inactiveCharIds as $charId) {
+            $char = $chars->get($charId);
+            if (!$char) {
+                continue;
+            }
+            $results[] = [
+                'character_id'     => (int) $charId,
+                'character_name'   => $char->name ?? ('Unknown #' . $charId),
+                'corporation_id'   => (int) ($char->corporation_id ?? 0),
+                'corporation_name' => $corpNames[$char->corporation_id] ?? ('Unknown Corp #' . $char->corporation_id),
+            ];
+        }
+
+        usort($results, fn($a, $b) => strcasecmp($a['corporation_name'], $b['corporation_name'])
+            ?: strcasecmp($a['character_name'], $b['character_name']));
+
+        return $results;
+    }
+
     /**
      * Build aggregated report: main character -> total PAPs for a given month/year.
      * Uses SUM(value) so bulk-imported FAT counts are reflected correctly.
+     * Includes whitelisted corporation members with 0 FATs.
      */
     public function buildReportData(int $month, int $year): array
     {
@@ -137,10 +248,6 @@ class ManualPapController extends Controller
             ->groupBy('character_id')
             ->pluck('total', 'character_id')
             ->toArray();
-
-        if (empty($paps)) {
-            return [];
-        }
 
         // Step 2: Batch resolve character_id -> user_id
         $charToUser = DB::table('refresh_tokens')
@@ -181,12 +288,35 @@ class ManualPapController extends Controller
             $aggregated[$mainCharId] += (int) $total;
         }
 
-        // Step 5: Batch load character names
+        // Step 5: Add whitelisted corporation members with 0 FATs
+        $corpIds = self::getWhitelistedCorpIds();
+        if (!empty($corpIds)) {
+            $whitelistedMains = DB::table('users')
+                ->join('character_infos', 'users.main_character_id', '=', 'character_infos.character_id')
+                ->whereIn('character_infos.corporation_id', $corpIds)
+                ->whereNotNull('users.main_character_id')
+                ->pluck('users.main_character_id')
+                ->unique()
+                ->toArray();
+
+            foreach ($whitelistedMains as $mainCharId) {
+                $mainCharId = (int) $mainCharId;
+                if (!isset($aggregated[$mainCharId])) {
+                    $aggregated[$mainCharId] = 0;
+                }
+            }
+        }
+
+        if (empty($aggregated)) {
+            return [];
+        }
+
+        // Step 6: Batch load character names
         $charNames = CharacterInfo::whereIn('character_id', array_keys($aggregated))
             ->pluck('name', 'character_id')
             ->toArray();
 
-        // Step 6: Build final result array
+        // Step 7: Build final result array
         $results = [];
         foreach ($aggregated as $charId => $total) {
             $results[] = [

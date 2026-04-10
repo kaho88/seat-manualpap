@@ -39,4 +39,28 @@ Route::group([
         'middleware' => 'can:manualpap.view',
     ]);
 
+    Route::get('/inactive', [
+        'as' => 'manualpap.inactive',
+        'uses' => 'ManualPapController@inactive',
+        'middleware' => 'can:manualpap.view',
+    ]);
+
+    Route::get('/settings', [
+        'as' => 'manualpap.settings',
+        'uses' => 'SettingsController@index',
+        'middleware' => 'can:manualpap.use',
+    ]);
+
+    Route::post('/settings/add', [
+        'as' => 'manualpap.settings.add',
+        'uses' => 'SettingsController@add',
+        'middleware' => 'can:manualpap.use',
+    ]);
+
+    Route::post('/settings/remove/{corporationId}', [
+        'as' => 'manualpap.settings.remove',
+        'uses' => 'SettingsController@remove',
+        'middleware' => 'can:manualpap.use',
+    ]);
+
 });
