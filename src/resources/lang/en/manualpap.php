@@ -1,0 +1,44 @@
+<?php
+
+return [
+    'pap_added'       => 'PAP successfully added. Operation #:op → Character #:char',
+    'operation'       => 'Operation',
+    'select_operation'=> 'Please select an operation',
+    'character_id'    => 'Character ID',
+    'ship_type_id'    => 'Ship Type ID',
+    'optional'        => 'Optional',
+    'value'           => 'PAP Value',
+    'value_hint'      => 'Leave empty to use the tag quantifier from the operation',
+    'submit'          => 'Add PAP',
+    'cancelled'       => 'Cancelled',
+    'api_title'       => 'API Endpoint',
+    'api_description' => 'You can also add PAPs via the API endpoint. Use your SeAT user API token (X-Token).',
+    'api_env_hint'    => 'The user needs the "manualpap.api" permission in SeAT. The token is the same X-Token used for the SeAT API.',
+
+    // Bulk import
+    'bulk_result'        => 'Bulk import complete: :ok/:total PAPs added to ":op". :failed failed.',
+    'bulk_failed_names'  => 'The following characters could not be resolved:',
+    'bulk_info_title'    => 'How bulk import works:',
+    'bulk_info_text'     => 'Paste a list of character names (one per line). Select a date. An operation named "Allianz FAT <Month> <Year>" will be created automatically and tagged with "Allypap". PAPs are always credited to the main character of each user.',
+    'bulk_date'          => 'Date',
+    'bulk_date_hint'     => 'Select the date for the fleet. The operation name is auto-generated from this.',
+    'bulk_auto_name'     => 'Operation name (auto-generated)',
+    'bulk_auto_name_hint'=> 'Automatically generated as "Allianz FAT <Month> <Year>" from the selected date.',
+    'bulk_auto_tag'      => 'Tag (fixed)',
+    'bulk_list_label'    => 'Character list',
+    'bulk_list_placeholder' => "Character Name 1\nCharacter Name 2\nCharacter Name 3\n...",
+    'bulk_submit'        => 'Import PAPs',
+    'back_to_single'     => 'Back to single PAP',
+
+    // Report
+    'report_month'       => 'Month',
+    'report_year'        => 'Year',
+    'report_filter'      => 'Filter',
+    'report_character'   => 'Main Character',
+    'report_char_id'     => 'Character ID',
+    'report_total_paps'  => 'Total FATs',
+    'report_total'       => 'Total',
+    'report_unique_chars'=> 'Unique characters',
+    'report_no_data'     => 'No PAPs found for this month/year.',
+    'report_api_hint'    => 'Available as API endpoint',
+];

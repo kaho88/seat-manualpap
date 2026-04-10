@@ -1,0 +1,25 @@
+{
+    "name": "hermesdj/seat-manual-pap",
+    "description": "Manual PAP insertion plugin for SeAT (works with seat-calendar).",
+    "type": "seat-plugin",
+    "autoload": {
+        "psr-4": {
+            "Seat\\ManualPap\\": "src/"
+        }
+    },
+    "require": {
+        "eveseat/web": "^5",
+        "eveseat/eveapi": "^5",
+        "eveseat/services": "^5"
+    },
+    "license": "GPL-2.0-or-later",
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Seat\\ManualPap\\ManualPapServiceProvider"
+            ]
+        }
+    }
+}
