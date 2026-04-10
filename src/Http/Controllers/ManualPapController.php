@@ -150,6 +150,8 @@ class ManualPapController extends Controller
     /**
      * Build a list of main characters from whitelisted corporations
      * who have had ZERO PAPs in the last 3 full calendar months.
+     * Uses corporation_members table so ALL corp members are included,
+     * not just those registered in SeAT.
      *
      * @param int[] $corporationIds
      */
@@ -166,70 +168,63 @@ class ManualPapController extends Controller
             $months[] = ['month' => $date->month, 'year' => $date->year];
         }
 
-        // Step 1: Get all main_character_ids from users whose main character
-        //         belongs to a whitelisted corporation (via character_affiliations).
-        $mainCharIds = DB::table('users')
-            ->join('character_affiliations', 'users.main_character_id', '=', 'character_affiliations.character_id')
-            ->whereIn('character_affiliations.corporation_id', $corporationIds)
-            ->whereNotNull('users.main_character_id')
-            ->pluck('users.main_character_id')
+        // Step 1: Get ALL character_ids from whitelisted corporations
+        $allCorpCharIds = DB::table('corporation_members')
+            ->whereIn('corporation_id', $corporationIds)
+            ->pluck('character_id')
             ->unique()
+            ->values()
             ->toArray();
 
-        if (empty($mainCharIds)) {
+        if (empty($allCorpCharIds)) {
             return [];
         }
 
-        // Step 2: Find main characters that DO have PAPs in any of the last 3 months
+        // Step 2: Resolve each character to their main character
+        $resolved = $this->resolveCharactersToMains($allCorpCharIds);
+
+        // Step 3: Find main characters that DO have PAPs in any of the last 3 months
         $activeQuery = DB::table('kassie_calendar_paps');
         foreach ($months as $m) {
             $activeQuery->orWhere(function ($q) use ($m) {
                 $q->where('month', $m['month'])->where('year', $m['year']);
             });
         }
-        $activeCharIds = $activeQuery
-            ->whereIn('character_id', $mainCharIds)
+        $activeMainIds = $activeQuery
             ->pluck('character_id')
             ->unique()
             ->toArray();
 
-        // Step 3: Inactive = whitelisted mains NOT in the active set
-        $inactiveCharIds = array_diff($mainCharIds, $activeCharIds);
+        // Step 4: Build inactive list - mains NOT in the active set
+        $uniqueMains = $resolved->unique('main_char_id');
+        $inactive = $uniqueMains->filter(fn($r) => !in_array($r['main_char_id'], $activeMainIds));
 
-        if (empty($inactiveCharIds)) {
+        if ($inactive->isEmpty()) {
             return [];
         }
 
-        // Step 4: Load character names and corporation affiliations
-        $chars = DB::table('character_infos')
-            ->whereIn('character_id', $inactiveCharIds)
-            ->get()
-            ->keyBy('character_id');
-
-        $affiliations = DB::table('character_affiliations')
-            ->whereIn('character_id', $inactiveCharIds)
-            ->pluck('corporation_id', 'character_id')
+        // Step 5: Load character names and corp names
+        $inactiveMainIds = $inactive->pluck('main_char_id')->unique()->toArray();
+        $charNames = DB::table('character_infos')
+            ->whereIn('character_id', $inactiveMainIds)
+            ->pluck('name', 'character_id')
             ->toArray();
 
-        $corpIds = array_unique(array_filter(array_values($affiliations)));
         $corpNames = DB::table('corporation_infos')
-            ->whereIn('corporation_id', $corpIds)
+            ->whereIn('corporation_id', $corporationIds)
             ->pluck('name', 'corporation_id')
             ->toArray();
 
-        // Step 5: Build result
+        // Step 6: Build result
         $results = [];
-        foreach ($inactiveCharIds as $charId) {
-            $char = $chars->get($charId);
-            $corpId = $affiliations[$charId] ?? null;
-            if (!$char) {
-                continue;
-            }
+        foreach ($inactive as $r) {
+            $charId = $r['main_char_id'];
+            $corpId = $r['corporation_id'];
             $results[] = [
                 'character_id'     => (int) $charId,
-                'character_name'   => $char->name ?? ('Unknown #' . $charId),
-                'corporation_id'   => (int) ($corpId ?? 0),
-                'corporation_name' => $corpId ? ($corpNames[$corpId] ?? ('Unknown Corp #' . $corpId)) : 'Unknown Corp',
+                'character_name'   => $charNames[$charId] ?? ('Unknown #' . $charId),
+                'corporation_id'   => (int) $corpId,
+                'corporation_name' => $corpNames[$corpId] ?? ('Unknown Corp #' . $corpId),
             ];
         }
 
@@ -242,7 +237,8 @@ class ManualPapController extends Controller
     /**
      * Build aggregated report: main character -> total PAPs for a given month/year.
      * Uses SUM(value) so bulk-imported FAT counts are reflected correctly.
-     * Includes whitelisted corporation members with 0 FATs.
+     * Includes ALL whitelisted corporation members (via corporation_members table)
+     * with 0 FATs, even if not registered in SeAT.
      */
     public function buildReportData(int $month, int $year): array
     {
@@ -255,58 +251,59 @@ class ManualPapController extends Controller
             ->pluck('total', 'character_id')
             ->toArray();
 
-        // Step 2: Batch resolve character_id -> user_id
-        $charToUser = DB::table('refresh_tokens')
-            ->whereIn('character_id', array_keys($paps))
-            ->pluck('user_id', 'character_id')
-            ->toArray();
-
-        // Step 3: Batch resolve user_id -> main character_id
-        $userIds = array_unique(array_values($charToUser));
-        $users = User::whereIn('id', $userIds)->get()->keyBy('id');
-
-        $allUserChars = DB::table('refresh_tokens')
-            ->whereIn('user_id', $userIds)
-            ->get()
-            ->groupBy('user_id')
-            ->map(fn($items) => $items->pluck('character_id')->toArray());
-
-        $userToMainChar = [];
-        foreach ($users as $userId => $user) {
-            $userToMainChar[$userId] = $user->main_character_id
-                ?: ($allUserChars[$userId][0] ?? null);
-        }
-
-        // Step 4: Aggregate PAPs by main character
+        // Step 2: Aggregate PAPs by main character
         $aggregated = [];
-        foreach ($paps as $characterId => $total) {
-            $userId = $charToUser[$characterId] ?? null;
-
-            if (!$userId) {
-                $mainCharId = (int) $characterId;
-            } else {
-                $mainCharId = (int) ($userToMainChar[$userId] ?? $characterId);
-            }
-
-            if (!isset($aggregated[$mainCharId])) {
-                $aggregated[$mainCharId] = 0;
-            }
-            $aggregated[$mainCharId] += (int) $total;
-        }
-
-        // Step 5: Add whitelisted corporation members with 0 FATs
-        $corpIds = self::getWhitelistedCorpIds();
-        if (!empty($corpIds)) {
-            $whitelistedMains = DB::table('users')
-                ->join('character_affiliations', 'users.main_character_id', '=', 'character_affiliations.character_id')
-                ->whereIn('character_affiliations.corporation_id', $corpIds)
-                ->whereNotNull('users.main_character_id')
-                ->pluck('users.main_character_id')
-                ->unique()
+        if (!empty($paps)) {
+            $charToUser = DB::table('refresh_tokens')
+                ->whereIn('character_id', array_keys($paps))
+                ->pluck('user_id', 'character_id')
                 ->toArray();
 
-            foreach ($whitelistedMains as $mainCharId) {
-                $mainCharId = (int) $mainCharId;
+            $userIds = array_unique(array_values($charToUser));
+            $users = User::whereIn('id', $userIds)->get()->keyBy('id');
+
+            $allUserChars = DB::table('refresh_tokens')
+                ->whereIn('user_id', $userIds)
+                ->get()
+                ->groupBy('user_id')
+                ->map(fn($items) => $items->pluck('character_id')->toArray());
+
+            $userToMainChar = [];
+            foreach ($users as $userId => $user) {
+                $userToMainChar[$userId] = $user->main_character_id
+                    ?: ($allUserChars[$userId][0] ?? null);
+            }
+
+            foreach ($paps as $characterId => $total) {
+                $userId = $charToUser[$characterId] ?? null;
+
+                if (!$userId) {
+                    $mainCharId = (int) $characterId;
+                } else {
+                    $mainCharId = (int) ($userToMainChar[$userId] ?? $characterId);
+                }
+
+                if (!isset($aggregated[$mainCharId])) {
+                    $aggregated[$mainCharId] = 0;
+                }
+                $aggregated[$mainCharId] += (int) $total;
+            }
+        }
+
+        // Step 3: Add ALL whitelisted corporation members with 0 FATs
+        $corpIds = self::getWhitelistedCorpIds();
+        if (!empty($corpIds)) {
+            $allCorpCharIds = DB::table('corporation_members')
+                ->whereIn('corporation_id', $corpIds)
+                ->pluck('character_id')
+                ->unique()
+                ->values()
+                ->toArray();
+
+            $resolved = $this->resolveCharactersToMains($allCorpCharIds);
+
+            foreach ($resolved as $r) {
+                $mainCharId = $r['main_char_id'];
                 if (!isset($aggregated[$mainCharId])) {
                     $aggregated[$mainCharId] = 0;
                 }
@@ -317,12 +314,13 @@ class ManualPapController extends Controller
             return [];
         }
 
-        // Step 6: Batch load character names
-        $charNames = CharacterInfo::whereIn('character_id', array_keys($aggregated))
+        // Step 4: Batch load character names
+        $charNames = DB::table('character_infos')
+            ->whereIn('character_id', array_keys($aggregated))
             ->pluck('name', 'character_id')
             ->toArray();
 
-        // Step 7: Build final result array
+        // Step 5: Build final result array
         $results = [];
         foreach ($aggregated as $charId => $total) {
             $results[] = [
@@ -333,6 +331,69 @@ class ManualPapController extends Controller
         }
 
         usort($results, fn($a, $b) => $b['total_paps'] <=> $a['total_paps']);
+
+        return $results;
+    }
+
+    // -------------------------------------------------------
+    // Corporation member helpers
+    // -------------------------------------------------------
+
+    /**
+     * Resolve a batch of character_ids to their main characters.
+     * Uses corporation_members to get corporation_id, and refresh_tokens/users
+     * to resolve main characters. Characters not registered in SeAT keep their
+     * own character_id as the "main".
+     *
+     * @param int[] $characterIds
+     * @return \Illuminate\Support\Collection  each item: ['char_id', 'main_char_id', 'corporation_id']
+     */
+    protected function resolveCharactersToMains(array $characterIds): \Illuminate\Support\Collection
+    {
+        // Get corporation_id for each character from corporation_members
+        $charToCorp = DB::table('corporation_members')
+            ->whereIn('character_id', $characterIds)
+            ->pluck('corporation_id', 'character_id')
+            ->toArray();
+
+        // Try to resolve character_id -> user_id via refresh_tokens
+        $charToUser = DB::table('refresh_tokens')
+            ->whereIn('character_id', $characterIds)
+            ->pluck('user_id', 'character_id')
+            ->toArray();
+
+        // Batch resolve user_id -> main_character_id
+        $userToMainChar = [];
+        if (!empty($charToUser)) {
+            $userIds = array_unique(array_values($charToUser));
+            $users = User::whereIn('id', $userIds)->get()->keyBy('id');
+
+            $allUserChars = DB::table('refresh_tokens')
+                ->whereIn('user_id', $userIds)
+                ->get()
+                ->groupBy('user_id')
+                ->map(fn($items) => $items->pluck('character_id')->toArray());
+
+            foreach ($users as $userId => $user) {
+                $userToMainChar[$userId] = $user->main_character_id
+                    ?: ($allUserChars[$userId][0] ?? null);
+            }
+        }
+
+        // Build resolved collection
+        $results = collect();
+        foreach ($characterIds as $charId) {
+            $userId = $charToUser[$charId] ?? null;
+            $mainCharId = $userId
+                ? ((int) ($userToMainChar[$userId] ?? $charId))
+                : (int) $charId;
+
+            $results->push([
+                'char_id'      => (int) $charId,
+                'main_char_id' => $mainCharId,
+                'corporation_id' => (int) ($charToCorp[$charId] ?? 0),
+            ]);
+        }
 
         return $results;
     }
