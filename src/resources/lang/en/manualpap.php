@@ -49,6 +49,8 @@ return [
     'inactive_no_corps'    => 'No corporations configured. Add corporations in Settings.',
     'inactive_corp_list'   => 'Whitelisted corporation IDs',
     'inactive_corporation' => 'Corporation',
+    'inactive_alliance'    => 'Alliance',
+    'inactive_token'       => 'Token',
     'inactive_total'       => 'Inactive characters',
     'inactive_none'        => 'All whitelisted corporation members had PAPs in the last 3 months!',
 
