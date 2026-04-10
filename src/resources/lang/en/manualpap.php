@@ -42,4 +42,27 @@ return [
     'report_unique_chars'=> 'Unique characters',
     'report_no_data'     => 'No PAPs found for this month/year.',
     'report_api_hint'    => 'Available as API endpoint',
+
+    // Inactive report
+    'inactive_info_title'  => 'No PAPs in the last 3 months',
+    'inactive_info_text'   => 'Shows all main characters from whitelisted corporations with zero PAPs in :month1, :month2 and :month3.',
+    'inactive_no_corps'    => 'No corporations configured. Add corporations in Settings.',
+    'inactive_corp_list'   => 'Whitelisted corporation IDs',
+    'inactive_corporation' => 'Corporation',
+    'inactive_total'       => 'Inactive characters',
+    'inactive_none'        => 'All whitelisted corporation members had PAPs in the last 3 months!',
+
+    // Settings
+    'settings_info'             => 'Manage the corporation whitelist. Only main characters from these corporations appear in the Inactive report and are shown with 0 FATs in the monthly Report.',
+    'settings_placeholder'      => 'Corporation name...',
+    'settings_add'              => 'Add Corporation',
+    'settings_remove'           => 'Remove',
+    'settings_confirm_remove'   => 'Remove this corporation from the whitelist?',
+    'settings_corp_name'        => 'Corporation Name',
+    'settings_corp_id'          => 'Corporation ID',
+    'settings_corp_not_found'   => 'Corporation not found. Please check the exact name.',
+    'settings_corp_exists'      => 'This corporation is already in the whitelist.',
+    'settings_corp_added'       => 'Corporation ":name" added to whitelist.',
+    'settings_corp_removed'     => 'Corporation removed from whitelist.',
+    'settings_no_corps'         => 'No corporations in the whitelist yet. Add one above.',
 ];

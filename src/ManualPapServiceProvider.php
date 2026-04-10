@@ -11,11 +11,13 @@ class ManualPapServiceProvider extends AbstractSeatPlugin
         $this->addRoutes();
         $this->addViews();
         $this->addTranslations();
+        $this->loadMigrationsFrom(__DIR__ . '/database/migrations');
     }
 
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__ . '/Config/package.sidebar.php', 'package.sidebar');
+        $this->mergeConfigFrom(__DIR__ . '/Config/manualpap.php', 'manualpap');
         $this->registerPermissions(__DIR__ . '/Config/Permissions/manualpap.php', 'manualpap');
     }
 

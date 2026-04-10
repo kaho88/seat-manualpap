@@ -129,4 +129,35 @@ class ManualPapApiController extends Controller
             'data'              => $results,
         ]);
     }
+
+    /**
+     * GET /api/manual-pap/inactive
+     * Returns main characters with zero PAPs in the last 3 months (whitelisted corporations).
+     */
+    public function inactive(Request $request): JsonResponse
+    {
+        $user = $this->resolveUser($request);
+
+        if (!$user) {
+            return response()->json([
+                'error' => 'Unauthorized. Provide a valid X-Token header.',
+            ], 401);
+        }
+
+        if (!$user->isAdmin() && !$user->can('manualpap.api')) {
+            return response()->json([
+                'error' => 'Forbidden. User does not have manualpap.api permission.',
+            ], 403);
+        }
+
+        $webController = new ManualPapController();
+        $corporationIds = ManualPapController::getWhitelistedCorpIds();
+        $results = $webController->buildInactiveData($corporationIds);
+
+        return response()->json([
+            'total_inactive'    => count($results),
+            'corporation_ids'   => $corporationIds,
+            'data'              => $results,
+        ]);
+    }
 }

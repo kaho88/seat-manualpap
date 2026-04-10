@@ -19,4 +19,9 @@ Route::group([
         'uses' => 'ManualPapApiController@report',
     ])->where(['year' => '[0-9]{4}', 'month' => '[0-9]{1,2}']);
 
+    Route::get('/inactive', [
+        'as' => 'manualpap.api.inactive',
+        'uses' => 'ManualPapApiController@inactive',
+    ]);
+
 });

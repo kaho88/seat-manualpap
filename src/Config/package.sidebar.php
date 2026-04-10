@@ -29,6 +29,20 @@ return [
                 'route' => 'manualpap.report',
                 'permission' => 'manualpap.view',
             ],
+            [
+                'name' => 'Inactive',
+                'label' => 'manualpap::seat.inactive_title',
+                'icon' => 'fas fa-user-slash',
+                'route' => 'manualpap.inactive',
+                'permission' => 'manualpap.view',
+            ],
+            [
+                'name' => 'Settings',
+                'label' => 'manualpap::seat.settings_title',
+                'icon' => 'fas fa-cog',
+                'route' => 'manualpap.settings',
+                'permission' => 'manualpap.use',
+            ],
         ],
     ],
 ];
