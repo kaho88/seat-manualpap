@@ -167,10 +167,10 @@ class ManualPapController extends Controller
         }
 
         // Step 1: Get all main_character_ids from users whose main character
-        //         belongs to a whitelisted corporation.
+        //         belongs to a whitelisted corporation (via character_affiliations).
         $mainCharIds = DB::table('users')
-            ->join('character_infos', 'users.main_character_id', '=', 'character_infos.character_id')
-            ->whereIn('character_infos.corporation_id', $corporationIds)
+            ->join('character_affiliations', 'users.main_character_id', '=', 'character_affiliations.character_id')
+            ->whereIn('character_affiliations.corporation_id', $corporationIds)
             ->whereNotNull('users.main_character_id')
             ->pluck('users.main_character_id')
             ->unique()
@@ -200,13 +200,18 @@ class ManualPapController extends Controller
             return [];
         }
 
-        // Step 4: Load character names and corporation names
+        // Step 4: Load character names and corporation affiliations
         $chars = DB::table('character_infos')
             ->whereIn('character_id', $inactiveCharIds)
             ->get()
             ->keyBy('character_id');
 
-        $corpIds = $chars->pluck('corporation_id')->unique()->filter()->toArray();
+        $affiliations = DB::table('character_affiliations')
+            ->whereIn('character_id', $inactiveCharIds)
+            ->pluck('corporation_id', 'character_id')
+            ->toArray();
+
+        $corpIds = array_unique(array_filter(array_values($affiliations)));
         $corpNames = DB::table('corporation_infos')
             ->whereIn('corporation_id', $corpIds)
             ->pluck('name', 'corporation_id')
@@ -216,14 +221,15 @@ class ManualPapController extends Controller
         $results = [];
         foreach ($inactiveCharIds as $charId) {
             $char = $chars->get($charId);
+            $corpId = $affiliations[$charId] ?? null;
             if (!$char) {
                 continue;
             }
             $results[] = [
                 'character_id'     => (int) $charId,
                 'character_name'   => $char->name ?? ('Unknown #' . $charId),
-                'corporation_id'   => (int) ($char->corporation_id ?? 0),
-                'corporation_name' => $corpNames[$char->corporation_id] ?? ('Unknown Corp #' . $char->corporation_id),
+                'corporation_id'   => (int) ($corpId ?? 0),
+                'corporation_name' => $corpId ? ($corpNames[$corpId] ?? ('Unknown Corp #' . $corpId)) : 'Unknown Corp',
             ];
         }
 
@@ -292,8 +298,8 @@ class ManualPapController extends Controller
         $corpIds = self::getWhitelistedCorpIds();
         if (!empty($corpIds)) {
             $whitelistedMains = DB::table('users')
-                ->join('character_infos', 'users.main_character_id', '=', 'character_infos.character_id')
-                ->whereIn('character_infos.corporation_id', $corpIds)
+                ->join('character_affiliations', 'users.main_character_id', '=', 'character_affiliations.character_id')
+                ->whereIn('character_affiliations.corporation_id', $corpIds)
                 ->whereNotNull('users.main_character_id')
                 ->pluck('users.main_character_id')
                 ->unique()
