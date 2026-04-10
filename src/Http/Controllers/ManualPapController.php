@@ -69,7 +69,7 @@ class ManualPapController extends Controller
         $date = Carbon::parse($data['date'], 'UTC');
 
         // Build operation title: "Allianz FAT <Monat> <Jahr>"
-        $monthName = $date->isoFormat('MMMM');   // lokalisiertes Monatsname
+        $monthName = $date->isoFormat('MMMM');
         $opTitle   = sprintf('Allianz FAT %s %s', ucfirst($monthName), $date->year);
 
         // Operation suchen oder erstellen
@@ -78,20 +78,17 @@ class ManualPapController extends Controller
         // Tag "Allypap" suchen oder erstellen und der Operation zuweisen
         $this->ensureAllypapTag($operation);
 
-        // Value aus dem Tag-Quantifier holen
-        $value = $this->resolveOperationValue($operation->id);
+        // Character-Liste parsen
+        // Format: "Name\tAnzahl" pro Zeile, z.B. "BennyMar    13"
+        // Ohne Tab/Anzahl: Name ohne Anzahl -> FAT-Wert = 1
+        $entries = $this->parseBulkList($data['character_list']);
 
-        // Character-Liste parsen (ein Name pro Zeile)
-        $names = array_filter(
-            array_map('trim', explode("\n", $data['character_list'])),
-            fn($name) => strlen($name) > 0
-        );
-
-        $results = $this->processBulkList($names, $operation->id, $value);
+        $totalInput = count($entries);
+        $results = $this->processBulkList($entries, $operation->id);
 
         return redirect()->route('manualpap.bulk')
             ->with('success', trans('manualpap::manualpap.bulk_result', [
-                'total'  => count($names),
+                'total'  => $totalInput,
                 'ok'     => $results['ok'],
                 'failed' => $results['failed'],
                 'op'     => $opTitle,
@@ -124,15 +121,15 @@ class ManualPapController extends Controller
 
     /**
      * Build aggregated report: main character -> total PAPs for a given month/year.
-     * Uses batched queries for performance.
+     * Uses SUM(value) so bulk-imported FAT counts are reflected correctly.
      */
     public function buildReportData(int $month, int $year): array
     {
-        // Step 1: Get PAP counts per character_id
+        // Step 1: Get PAP value sums per character_id
         $paps = DB::table('kassie_calendar_paps')
             ->where('month', $month)
             ->where('year', $year)
-            ->select('character_id', DB::raw('COUNT(*) as total'))
+            ->select('character_id', DB::raw('SUM(value) as total'))
             ->groupBy('character_id')
             ->pluck('total', 'character_id')
             ->toArray();
@@ -172,7 +169,6 @@ class ManualPapController extends Controller
             $userId = $charToUser[$characterId] ?? null;
 
             if (!$userId) {
-                // Character not registered in SeAT - still count it
                 $mainCharId = (int) $characterId;
             } else {
                 $mainCharId = (int) ($userToMainChar[$userId] ?? $characterId);
@@ -181,7 +177,7 @@ class ManualPapController extends Controller
             if (!isset($aggregated[$mainCharId])) {
                 $aggregated[$mainCharId] = 0;
             }
-            $aggregated[$mainCharId] += $total;
+            $aggregated[$mainCharId] += (int) $total;
         }
 
         // Step 5: Batch load character names
@@ -210,15 +206,63 @@ class ManualPapController extends Controller
     // -------------------------------------------------------
 
     /**
-     * Process a list of character names: resolve to main character and insert PAPs.
+     * Parse the bulk list into [name => fat_count] pairs.
+     * Format: "CharacterName\t13" or just "CharacterName" (defaults to 1).
+     * Entries with 0 FATs are skipped.
+     *
+     * @return array<string, int>  name => fat_count
      */
-    protected function processBulkList(array $names, int $operationId, int $value): array
+    protected function parseBulkList(string $rawList): array
+    {
+        $entries = [];
+
+        $lines = explode("\n", $rawList);
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+
+            if ($line === '') {
+                continue;
+            }
+
+            // Split by tab or multiple whitespace (handles tab-separated and space-padded)
+            $parts = preg_split('/[\t]+/', $line);
+
+            $name = trim($parts[0] ?? '');
+
+            if ($name === '') {
+                continue;
+            }
+
+            // Parse the count from the second column
+            $count = 1; // default
+            if (isset($parts[1])) {
+                $parsed = (int) trim($parts[1]);
+                if ($parsed > 0) {
+                    $count = $parsed;
+                } elseif ($parsed === 0) {
+                    continue; // skip entries with 0 FATs
+                }
+            }
+
+            $entries[$name] = $count;
+        }
+
+        return $entries;
+    }
+
+    /**
+     * Process parsed entries: resolve each name to main character and insert PAPs.
+     *
+     * @param array<string, int> $entries  name => fat_count
+     */
+    protected function processBulkList(array $entries, int $operationId): array
     {
         $ok = 0;
         $failed = 0;
         $failedNames = [];
 
-        foreach ($names as $name) {
+        foreach ($entries as $name => $fatCount) {
             $mainCharId = $this->resolveNameToMainCharacter($name);
 
             if (!$mainCharId) {
@@ -227,7 +271,7 @@ class ManualPapController extends Controller
                 continue;
             }
 
-            $this->insertPap($operationId, $mainCharId, 0, $value);
+            $this->insertPap($operationId, $mainCharId, 0, $fatCount);
             $ok++;
         }
 
@@ -240,10 +284,6 @@ class ManualPapController extends Controller
 
     /**
      * Resolve a character name to the main character ID of the owning user.
-     *
-     * Flow: character name -> character_infos.character_id
-     *       -> refresh_tokens.user_id -> User
-     *       -> main character (user name matches character name convention)
      */
     protected function resolveNameToMainCharacter(string $characterName): ?int
     {
@@ -260,7 +300,6 @@ class ManualPapController extends Controller
             ->value('user_id');
 
         if (!$userId) {
-            // Character exists in EVE but is not registered in SeAT
             return null;
         }
 
@@ -270,8 +309,7 @@ class ManualPapController extends Controller
             ->pluck('character_id')
             ->toArray();
 
-        // 4. Resolve main character:
-        //    In SeAT the user's name is typically their main character's name.
+        // 4. Resolve main character (user name matches main character name in SeAT)
         $user = User::find($userId);
         $mainCharId = CharacterInfo::where('name', $user->name)
             ->whereIn('character_id', $userCharacterIds)
@@ -296,14 +334,16 @@ class ManualPapController extends Controller
             return $operation;
         }
 
-        return Operation::create([
-            'title'          => $title,
-            'user_id'        => auth()->id(),
-            'start_at'       => $date->copy()->startOfDay(),
-            'end_at'         => $date->copy()->endOfDay(),
-            'importance'     => 'full',
-            'description'    => 'Auto-created by Manual PAP bulk import',
-        ]);
+        $operation = new Operation();
+        $operation->forceFill([
+            'title'      => $title,
+            'user_id'    => auth()->id(),
+            'start_at'   => $date->copy()->startOfDay(),
+            'end_at'     => $date->copy()->endOfDay(),
+            'importance' => 'full',
+        ])->save();
+
+        return $operation->fresh();
     }
 
     /**
@@ -323,7 +363,6 @@ class ManualPapController extends Controller
             ]);
         }
 
-        // Attach tag if not already attached
         if (!$operation->tags()->where('calendar_tags.id', $tag->id)->exists()) {
             $operation->tags()->attach($tag->id);
         }
