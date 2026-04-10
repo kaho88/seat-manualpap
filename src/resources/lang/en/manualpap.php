@@ -18,7 +18,7 @@ return [
     // Bulk import
     'bulk_result'        => 'Bulk import complete: :ok/:total PAPs added to ":op". :failed failed.',
     'bulk_failed_names'  => 'The following characters could not be resolved:',
-    'bulk_skipped_names' => 'The following characters were skipped (already exist):',
+    'bulk_skipped_names' => 'The following characters were merged (FATs added to existing main character):',
     'bulk_info_title'    => 'How bulk import works:',
     'bulk_info_text'     => 'Paste a list (name + FAT count, tab-separated, one per line). Select month and year. An operation "Allianz FAT <Month> <Year>" will be created automatically (date: always the 28th). Already existing characters will not be overwritten.',
     'bulk_month'         => 'Month',

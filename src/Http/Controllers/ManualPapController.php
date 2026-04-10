@@ -96,7 +96,7 @@ class ManualPapController extends Controller
                 'failed' => $results['failed'],
                 'op'     => $opTitle,
             ]))
-            ->with('skipped_names', $results['skipped_names'])
+            ->with('merged_names', $results['merged_names'])
             ->with('failed_names', $results['failed_names'])
             ->withInput();
     }
@@ -253,7 +253,7 @@ class ManualPapController extends Controller
 
     /**
      * Process parsed entries: resolve each name to main character and insert PAPs.
-     * Skips characters that already have a PAP for this operation (no overwrite).
+     * If a main character already has a PAP, the FAT count is added to the existing value.
      *
      * @param array<string, int> $entries  name => fat_count
      */
@@ -262,12 +262,12 @@ class ManualPapController extends Controller
         $ok = 0;
         $failed = 0;
         $failedNames = [];
-        $skippedNames = [];
+        $mergedNames = [];
 
-        // Bereits vorhandene character_ids fuer diese Operation laden
-        $existingCharIds = DB::table('kassie_calendar_paps')
+        // Bereits vorhandene character_ids und deren value fuer diese Operation laden
+        $existingPaps = DB::table('kassie_calendar_paps')
             ->where('operation_id', $operationId)
-            ->pluck('character_id')
+            ->pluck('value', 'character_id')
             ->toArray();
 
         foreach ($entries as $name => $fatCount) {
@@ -279,14 +279,23 @@ class ManualPapController extends Controller
                 continue;
             }
 
-            // Überspringen wenn bereits ein PAP existiert (kein Überschreiben)
-            if (in_array($mainCharId, $existingCharIds)) {
-                $skippedNames[] = $name;
+            // Wenn bereits ein PAP fuer diesen Haupt-Character existiert: FATs addieren
+            if (array_key_exists($mainCharId, $existingPaps)) {
+                $newValue = (int) $existingPaps[$mainCharId] + $fatCount;
+
+                DB::table('kassie_calendar_paps')
+                    ->where('operation_id', $operationId)
+                    ->where('character_id', $mainCharId)
+                    ->update(['value' => $newValue]);
+
+                $existingPaps[$mainCharId] = $newValue;
+                $mergedNames[] = $name . ' (+' . $fatCount . ')';
+                $ok++;
                 continue;
             }
 
             $this->insertPapForMonth($operationId, $mainCharId, 0, $fatCount, $month, $year);
-            $existingCharIds[] = $mainCharId; // merken für Duplikaterkennung
+            $existingPaps[$mainCharId] = $fatCount;
             $ok++;
         }
 
@@ -294,7 +303,7 @@ class ManualPapController extends Controller
             'ok'            => $ok,
             'failed'        => $failed,
             'failed_names'  => $failedNames,
-            'skipped_names' => $skippedNames,
+            'merged_names'  => $mergedNames,
         ];
     }
 

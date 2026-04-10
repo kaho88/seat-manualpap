@@ -18,7 +18,7 @@ return [
     // Massenimport
     'bulk_result'        => 'Massenimport abgeschlossen: :ok/:total PAPs zu ":op" hinzugefügt. :failed fehlgeschlagen.',
     'bulk_failed_names'  => 'Folgende Characters konnten nicht aufgelöst werden:',
-    'bulk_skipped_names' => 'Folgende Characters wurden übersprungen (bereits vorhanden):',
+    'bulk_skipped_names' => 'Folgende Characters wurden zusammengefasst (FATs zum bestehenden Haupt-Character addiert):',
     'bulk_info_title'    => 'So funktioniert der Massenimport:',
     'bulk_info_text'     => 'Füge eine Liste ein (Name + FAT-Anzahl, tab-getrennt, einer pro Zeile). Wähle Monat und Jahr. Es wird automatisch eine Operation "Allianz FAT <Monat> <Jahr>" erstellt (Datum: immer der 28.). Bereits vorhandene Characters werden nicht überschrieben.',
     'bulk_month'         => 'Monat',

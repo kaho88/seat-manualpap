@@ -20,11 +20,11 @@
                         </div>
                     @endif
 
-                    @if(session('skipped_names') && count(session('skipped_names')) > 0)
+                    @if(session('merged_names') && count(session('merged_names')) > 0)
                         <div class="alert alert-info">
                             <strong>{{ trans('manualpap::manualpap.bulk_skipped_names') }}</strong>
                             <ul class="mb-0">
-                                @foreach(session('skipped_names') as $name)
+                                @foreach(session('merged_names') as $name)
                                     <li>{{ $name }}</li>
                                 @endforeach
                             </ul>
