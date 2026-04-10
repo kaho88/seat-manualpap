@@ -420,23 +420,21 @@ class ManualPapController extends Controller
             ->pluck('name', 'character_id')
             ->toArray();
 
-        // Load corporation names
+        // Load corporation names and alliance_ids from corporation_infos
         $corpIds = array_unique(array_values($charToCorp));
-        $corpNames = DB::table('corporation_infos')
+        $corpRows = DB::table('corporation_infos')
             ->whereIn('corporation_id', $corpIds)
-            ->pluck('name', 'corporation_id')
-            ->toArray();
+            ->select('corporation_id', 'name', 'alliance_id')
+            ->get();
 
-        // Load alliance names via character_affiliations
-        $affiliations = DB::table('character_affiliations')
-            ->whereIn('character_id', $allMainCharIds)
-            ->pluck('alliance_id', 'character_id')
-            ->toArray();
+        $corpNames = $corpRows->pluck('name', 'corporation_id')->toArray();
+        $corpToAlliance = $corpRows->pluck('alliance_id', 'corporation_id')->toArray();
 
-        $allianceIds = array_unique(array_filter(array_values($affiliations)));
+        // Load alliance names from alliances table
+        $allianceIds = array_unique(array_filter($corpToAlliance));
         $allianceNames = [];
         if (!empty($allianceIds)) {
-            $allianceNames = DB::table('alliance_infos')
+            $allianceNames = DB::table('alliances')
                 ->whereIn('alliance_id', $allianceIds)
                 ->pluck('name', 'alliance_id')
                 ->toArray();
@@ -451,7 +449,7 @@ class ManualPapController extends Controller
                 : (int) $charId;
 
             $corpId = (int) ($charToCorp[$charId] ?? 0);
-            $allianceId = $affiliations[$mainCharId] ?? null;
+            $allianceId = $corpToAlliance[$corpId] ?? null;
 
             $results->push([
                 'char_id'         => (int) $charId,
