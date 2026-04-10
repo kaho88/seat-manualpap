@@ -324,12 +324,13 @@ class ManualPapController extends Controller
         }
 
         // Direkte Attribut-Zuweisung umgeht $fillable von Operation-Model
+        // Orientiert an bestehender Operation (id=6): importance=2, user_id gesetzt
         $operation = new Operation;
         $operation->title      = $title;
         $operation->user_id    = auth()->id();
         $operation->start_at   = $date->copy()->startOfDay();
         $operation->end_at     = $date->copy()->endOfDay();
-        $operation->importance = 'full';
+        $operation->importance = '2';
         $operation->save();
 
         return $operation;
