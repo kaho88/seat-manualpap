@@ -156,11 +156,9 @@ class ManualPapController extends Controller
 
         $userToMainChar = [];
         foreach ($users as $userId => $user) {
-            $charIds = $allUserChars[$userId] ?? [];
-            $mainCharId = CharacterInfo::where('name', $user->name)
-                ->whereIn('character_id', $charIds)
-                ->value('character_id');
-            $userToMainChar[$userId] = $mainCharId ?: ($charIds[0] ?? null);
+            // Use main_character_id directly from user model
+            $userToMainChar[$userId] = $user->main_character_id
+                ?: ($allUserChars[$userId][0] ?? null);
         }
 
         // Step 4: Aggregate PAPs by main character
@@ -303,20 +301,11 @@ class ManualPapController extends Controller
             return null;
         }
 
-        // 3. Get all character IDs for this user
-        $userCharacterIds = DB::table('refresh_tokens')
-            ->where('user_id', $userId)
-            ->pluck('character_id')
-            ->toArray();
-
-        // 4. Resolve main character (user name matches main character name in SeAT)
+        // 3. Use main_character_id from user model directly
         $user = User::find($userId);
-        $mainCharId = CharacterInfo::where('name', $user->name)
-            ->whereIn('character_id', $userCharacterIds)
-            ->value('character_id');
 
-        if ($mainCharId) {
-            return (int) $mainCharId;
+        if ($user && $user->main_character_id) {
+            return (int) $user->main_character_id;
         }
 
         // Fallback: use the original character
@@ -334,16 +323,16 @@ class ManualPapController extends Controller
             return $operation;
         }
 
-        $operation = new Operation();
-        $operation->forceFill([
-            'title'      => $title,
-            'user_id'    => auth()->id(),
-            'start_at'   => $date->copy()->startOfDay(),
-            'end_at'     => $date->copy()->endOfDay(),
-            'importance' => 'full',
-        ])->save();
+        // Direkte Attribut-Zuweisung umgeht $fillable von Operation-Model
+        $operation = new Operation;
+        $operation->title      = $title;
+        $operation->user_id    = auth()->id();
+        $operation->start_at   = $date->copy()->startOfDay();
+        $operation->end_at     = $date->copy()->endOfDay();
+        $operation->importance = 'full';
+        $operation->save();
 
-        return $operation->fresh();
+        return $operation;
     }
 
     /**
