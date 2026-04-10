@@ -63,14 +63,19 @@ class ManualPapController extends Controller
     {
         $data = request()->validate([
             'character_list' => ['required', 'string'],
-            'date'           => ['required', 'date'],
+            'month'          => ['required', 'integer', 'between:1,12'],
+            'year'           => ['required', 'integer', 'min:2020'],
         ]);
 
-        $date = Carbon::parse($data['date'], 'UTC');
+        $month = (int) $data['month'];
+        $year  = (int) $data['year'];
+
+        // Datum: immer der 28. des gewaehlten Monats
+        $date = Carbon::create($year, $month, 28, 0, 0, 0, 'UTC');
 
         // Build operation title: "Allianz FAT <Monat> <Jahr>"
         $monthName = $date->isoFormat('MMMM');
-        $opTitle   = sprintf('Allianz FAT %s %s', ucfirst($monthName), $date->year);
+        $opTitle   = sprintf('Allianz FAT %s %s', ucfirst($monthName), $year);
 
         // Operation suchen oder erstellen
         $operation = $this->findOrCreateOperation($opTitle, $date);
@@ -79,12 +84,10 @@ class ManualPapController extends Controller
         $this->ensureAllypapTag($operation);
 
         // Character-Liste parsen
-        // Format: "Name\tAnzahl" pro Zeile, z.B. "BennyMar    13"
-        // Ohne Tab/Anzahl: Name ohne Anzahl -> FAT-Wert = 1
         $entries = $this->parseBulkList($data['character_list']);
 
         $totalInput = count($entries);
-        $results = $this->processBulkList($entries, $operation->id);
+        $results = $this->processBulkList($entries, $operation->id, $month, $year);
 
         return redirect()->route('manualpap.bulk')
             ->with('success', trans('manualpap::manualpap.bulk_result', [
@@ -93,6 +96,7 @@ class ManualPapController extends Controller
                 'failed' => $results['failed'],
                 'op'     => $opTitle,
             ]))
+            ->with('skipped_names', $results['skipped_names'])
             ->with('failed_names', $results['failed_names'])
             ->withInput();
     }
@@ -156,7 +160,6 @@ class ManualPapController extends Controller
 
         $userToMainChar = [];
         foreach ($users as $userId => $user) {
-            // Use main_character_id directly from user model
             $userToMainChar[$userId] = $user->main_character_id
                 ?: ($allUserChars[$userId][0] ?? null);
         }
@@ -193,7 +196,6 @@ class ManualPapController extends Controller
             ];
         }
 
-        // Sort by total PAPs descending
         usort($results, fn($a, $b) => $b['total_paps'] <=> $a['total_paps']);
 
         return $results;
@@ -223,7 +225,7 @@ class ManualPapController extends Controller
                 continue;
             }
 
-            // Split by tab or multiple whitespace (handles tab-separated and space-padded)
+            // Split by tab or multiple whitespace
             $parts = preg_split('/[\t]+/', $line);
 
             $name = trim($parts[0] ?? '');
@@ -233,7 +235,7 @@ class ManualPapController extends Controller
             }
 
             // Parse the count from the second column
-            $count = 1; // default
+            $count = 1;
             if (isset($parts[1])) {
                 $parsed = (int) trim($parts[1]);
                 if ($parsed > 0) {
@@ -251,14 +253,22 @@ class ManualPapController extends Controller
 
     /**
      * Process parsed entries: resolve each name to main character and insert PAPs.
+     * Skips characters that already have a PAP for this operation (no overwrite).
      *
      * @param array<string, int> $entries  name => fat_count
      */
-    protected function processBulkList(array $entries, int $operationId): array
+    protected function processBulkList(array $entries, int $operationId, int $month, int $year): array
     {
         $ok = 0;
         $failed = 0;
         $failedNames = [];
+        $skippedNames = [];
+
+        // Bereits vorhandene character_ids fuer diese Operation laden
+        $existingCharIds = DB::table('kassie_calendar_paps')
+            ->where('operation_id', $operationId)
+            ->pluck('character_id')
+            ->toArray();
 
         foreach ($entries as $name => $fatCount) {
             $mainCharId = $this->resolveNameToMainCharacter($name);
@@ -269,14 +279,22 @@ class ManualPapController extends Controller
                 continue;
             }
 
-            $this->insertPap($operationId, $mainCharId, 0, $fatCount);
+            // Überspringen wenn bereits ein PAP existiert (kein Überschreiben)
+            if (in_array($mainCharId, $existingCharIds)) {
+                $skippedNames[] = $name;
+                continue;
+            }
+
+            $this->insertPapForMonth($operationId, $mainCharId, 0, $fatCount, $month, $year);
+            $existingCharIds[] = $mainCharId; // merken für Duplikaterkennung
             $ok++;
         }
 
         return [
-            'ok'           => $ok,
-            'failed'       => $failed,
-            'failed_names' => $failedNames,
+            'ok'            => $ok,
+            'failed'        => $failed,
+            'failed_names'  => $failedNames,
+            'skipped_names' => $skippedNames,
         ];
     }
 
@@ -285,14 +303,12 @@ class ManualPapController extends Controller
      */
     protected function resolveNameToMainCharacter(string $characterName): ?int
     {
-        // 1. Find character_id by name
         $characterId = CharacterInfo::where('name', $characterName)->value('character_id');
 
         if (!$characterId) {
             return null;
         }
 
-        // 2. Find the user who owns this character via refresh_tokens
         $userId = DB::table('refresh_tokens')
             ->where('character_id', $characterId)
             ->value('user_id');
@@ -301,14 +317,12 @@ class ManualPapController extends Controller
             return null;
         }
 
-        // 3. Use main_character_id from user model directly
         $user = User::find($userId);
 
         if ($user && $user->main_character_id) {
             return (int) $user->main_character_id;
         }
 
-        // Fallback: use the original character
         return (int) $characterId;
     }
 
@@ -323,14 +337,12 @@ class ManualPapController extends Controller
             return $operation;
         }
 
-        // Direkte Attribut-Zuweisung umgeht $fillable von Operation-Model
-        // Orientiert an bestehender Operation (id=6): importance=2, user_id gesetzt
         $operation = new Operation;
         $operation->title      = $title;
         $operation->user_id    = auth()->id();
         $operation->start_at   = $date->copy()->startOfDay();
         $operation->end_at     = $date->copy()->endOfDay();
-        $operation->importance = '2';
+        $operation->importance = '5';
         $operation->save();
 
         return $operation;
@@ -390,6 +402,28 @@ class ManualPapController extends Controller
             ]],
             ['operation_id', 'character_id'],
             ['ship_type_id', 'join_time', 'value', 'week', 'month', 'year']
+        );
+    }
+
+    /**
+     * Insert a PAP with a specific month/year (used by bulk import).
+     * Uses the 28th of the month for join_time and derives week/month/year from it.
+     */
+    protected function insertPapForMonth(int $operationId, int $characterId, int $shipTypeId, int $value, int $month, int $year): void
+    {
+        $joinTime = Carbon::create($year, $month, 28, 12, 0, 0, 'UTC');
+
+        DB::table('kassie_calendar_paps')->insert(
+            [[
+                'operation_id' => $operationId,
+                'character_id' => $characterId,
+                'ship_type_id' => $shipTypeId,
+                'join_time'    => $joinTime->toDateTimeString(),
+                'value'        => $value,
+                'week'         => $joinTime->weekOfMonth,
+                'month'        => $joinTime->month,
+                'year'         => $joinTime->year,
+            ]]
         );
     }
 }

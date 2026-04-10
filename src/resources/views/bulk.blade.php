@@ -20,6 +20,17 @@
                         </div>
                     @endif
 
+                    @if(session('skipped_names') && count(session('skipped_names')) > 0)
+                        <div class="alert alert-info">
+                            <strong>{{ trans('manualpap::manualpap.bulk_skipped_names') }}</strong>
+                            <ul class="mb-0">
+                                @foreach(session('skipped_names') as $name)
+                                    <li>{{ $name }}</li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
+
                     @if(session('failed_names') && count(session('failed_names')) > 0)
                         <div class="alert alert-warning">
                             <strong>{{ trans('manualpap::manualpap.bulk_failed_names') }}</strong>
@@ -49,15 +60,28 @@
                     <form method="POST" action="{{ route('manualpap.bulkStore') }}">
                         @csrf
 
-                        <div class="form-group mb-3">
-                            <label for="date">{{ trans('manualpap::manualpap.bulk_date') }}</label>
-                            <input type="date" name="date" id="date"
-                                   class="form-control"
-                                   value="{{ old('date', date('Y-m-d')) }}"
-                                   required>
-                            <small class="text-muted">
-                                {{ trans('manualpap::manualpap.bulk_date_hint') }}
-                            </small>
+                        <div class="form-row mb-3">
+                            <div class="form-group col-md-6">
+                                <label for="month">{{ trans('manualpap::manualpap.bulk_month') }}</label>
+                                <select name="month" id="month" class="form-control" required>
+                                    @for($m = 1; $m <= 12; $m++)
+                                        <option value="{{ $m }}" {{ (int)old('month', now()->month) == $m ? 'selected' : '' }}>
+                                            {{ \Carbon\Carbon::create()->month($m)->isoFormat('MMMM') }}
+                                        </option>
+                                    @endfor
+                                </select>
+                            </div>
+
+                            <div class="form-group col-md-6">
+                                <label for="year">{{ trans('manualpap::manualpap.bulk_year') }}</label>
+                                <select name="year" id="year" class="form-control" required>
+                                    @for($y = now()->year; $y >= 2020; $y--)
+                                        <option value="{{ $y }}" {{ (int)old('year', now()->year) == $y ? 'selected' : '' }}>
+                                            {{ $y }}
+                                        </option>
+                                    @endfor
+                                </select>
+                            </div>
                         </div>
 
                         <div class="form-group mb-3">
@@ -102,28 +126,27 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    var dateInput = document.getElementById('date');
-    var autoName  = document.getElementById('auto_op_name');
+    var monthSelect = document.getElementById('month');
+    var yearSelect  = document.getElementById('year');
+    var autoName    = document.getElementById('auto_op_name');
 
     var monthNames = {
-        '01': 'Januar', '02': 'Februar', '03': 'März',
-        '04': 'April',  '05': 'Mai',     '06': 'Juni',
-        '07': 'Juli',   '08': 'August',  '09': 'September',
-        '10': 'Oktober','11': 'November','12': 'Dezember'
+        1: 'Januar', 2: 'Februar', 3: 'März',
+        4: 'April',  5: 'Mai',     6: 'Juni',
+        7: 'Juli',   8: 'August',  9: 'September',
+        10: 'Oktober', 11: 'November', 12: 'Dezember'
     };
 
     function updateAutoName() {
-        var val = dateInput.value;
-        if (val) {
-            var parts = val.split('-');
-            var month = monthNames[parts[1]] || parts[1];
-            autoName.value = 'Allianz FAT ' + month + ' ' + parts[0];
-        } else {
-            autoName.value = '';
+        var month = monthSelect.value;
+        var year  = yearSelect.value;
+        if (month && year) {
+            autoName.value = 'Allianz FAT ' + monthNames[month] + ' ' + year;
         }
     }
 
-    dateInput.addEventListener('change', updateAutoName);
+    monthSelect.addEventListener('change', updateAutoName);
+    yearSelect.addEventListener('change', updateAutoName);
     updateAutoName();
 });
 </script>
