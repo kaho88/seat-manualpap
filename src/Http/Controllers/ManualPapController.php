@@ -195,7 +195,7 @@ class ManualPapController extends Controller
             ->unique()
             ->toArray();
 
-        // Step 4: Build inactive list - mains NOT in the active set
+        // Step 4: Build inactive list - unique mains NOT in the active set
         $uniqueMains = $resolved->unique('main_char_id');
         $inactive = $uniqueMains->filter(fn($r) => !in_array($r['main_char_id'], $activeMainIds));
 
@@ -203,33 +203,24 @@ class ManualPapController extends Controller
             return [];
         }
 
-        // Step 5: Load character names and corp names
-        $inactiveMainIds = $inactive->pluck('main_char_id')->unique()->toArray();
-        $charNames = DB::table('character_infos')
-            ->whereIn('character_id', $inactiveMainIds)
-            ->pluck('name', 'character_id')
-            ->toArray();
+        // Step 5: Build result - all fields come from resolveCharactersToMains
+        $results = $inactive->values()->map(fn($r) => [
+            'character_name'  => $r['main_char_name'],
+            'corporation_name' => $r['corporation_name'],
+            'alliance_name'   => $r['alliance_name'],
+            'has_token'       => $r['has_token'],
+        ])->toArray();
 
-        $corpNames = DB::table('corporation_infos')
-            ->whereIn('corporation_id', $corporationIds)
-            ->pluck('name', 'corporation_id')
-            ->toArray();
-
-        // Step 6: Build result
-        $results = [];
-        foreach ($inactive as $r) {
-            $charId = $r['main_char_id'];
-            $corpId = $r['corporation_id'];
-            $results[] = [
-                'character_id'     => (int) $charId,
-                'character_name'   => $charNames[$charId] ?? ('Unknown #' . $charId),
-                'corporation_id'   => (int) $corpId,
-                'corporation_name' => $corpNames[$corpId] ?? ('Unknown Corp #' . $corpId),
-            ];
-        }
-
-        usort($results, fn($a, $b) => strcasecmp($a['corporation_name'], $b['corporation_name'])
-            ?: strcasecmp($a['character_name'], $b['character_name']));
+        // Sort: registered users first, then by corp name, then char name
+        usort($results, function ($a, $b) {
+            // Registered (has_token) first
+            if ($a['has_token'] !== $b['has_token']) {
+                return $b['has_token'] ? 1 : -1;
+            }
+            $cmp = strcasecmp($a['corporation_name'], $b['corporation_name']);
+            if ($cmp !== 0) return $cmp;
+            return strcasecmp($a['character_name'], $b['character_name']);
+        });
 
         return $results;
     }
@@ -239,6 +230,7 @@ class ManualPapController extends Controller
      * Uses SUM(value) so bulk-imported FAT counts are reflected correctly.
      * Includes ALL whitelisted corporation members (via corporation_members table)
      * with 0 FATs, even if not registered in SeAT.
+     * Returns corporation, alliance and token status for each character.
      */
     public function buildReportData(int $month, int $year): array
     {
@@ -290,8 +282,10 @@ class ManualPapController extends Controller
             }
         }
 
-        // Step 3: Add ALL whitelisted corporation members with 0 FATs
+        // Step 3: Resolve ALL whitelisted corporation members with metadata
         $corpIds = self::getWhitelistedCorpIds();
+        $metaMap = []; // main_char_id => metadata from resolver
+
         if (!empty($corpIds)) {
             $allCorpCharIds = DB::table('corporation_members')
                 ->whereIn('corporation_id', $corpIds)
@@ -307,6 +301,10 @@ class ManualPapController extends Controller
                 if (!isset($aggregated[$mainCharId])) {
                     $aggregated[$mainCharId] = 0;
                 }
+                // Store metadata (first occurrence per main wins)
+                if (!isset($metaMap[$mainCharId])) {
+                    $metaMap[$mainCharId] = $r;
+                }
             }
         }
 
@@ -314,23 +312,46 @@ class ManualPapController extends Controller
             return [];
         }
 
-        // Step 4: Batch load character names
-        $charNames = DB::table('character_infos')
-            ->whereIn('character_id', array_keys($aggregated))
-            ->pluck('name', 'character_id')
-            ->toArray();
+        // Step 4: Load character names for any main_char_ids not in metaMap
+        $missingIds = array_diff(array_keys($aggregated), array_keys($metaMap));
+        $charNames = [];
+        if (!empty($missingIds)) {
+            $charNames = DB::table('character_infos')
+                ->whereIn('character_id', $missingIds)
+                ->pluck('name', 'character_id')
+                ->toArray();
+        }
 
         // Step 5: Build final result array
         $results = [];
         foreach ($aggregated as $charId => $total) {
-            $results[] = [
-                'character_id'   => $charId,
-                'character_name' => $charNames[$charId] ?? ('Unknown #' . $charId),
-                'total_paps'     => $total,
-            ];
+            $meta = $metaMap[$charId] ?? null;
+            if ($meta) {
+                $results[] = [
+                    'character_name'   => $meta['main_char_name'],
+                    'corporation_name' => $meta['corporation_name'],
+                    'alliance_name'    => $meta['alliance_name'],
+                    'has_token'        => $meta['has_token'],
+                    'total_paps'       => $total,
+                ];
+            } else {
+                $results[] = [
+                    'character_name'   => $charNames[$charId] ?? ('Unknown #' . $charId),
+                    'corporation_name' => null,
+                    'alliance_name'    => null,
+                    'has_token'        => false,
+                    'total_paps'       => $total,
+                ];
+            }
         }
 
-        usort($results, fn($a, $b) => $b['total_paps'] <=> $a['total_paps']);
+        // Sort: registered first, then by FATs descending
+        usort($results, function ($a, $b) {
+            if ($a['has_token'] !== $b['has_token']) {
+                return $b['has_token'] ? 1 : -1;
+            }
+            return $b['total_paps'] <=> $a['total_paps'];
+        });
 
         return $results;
     }
@@ -346,7 +367,7 @@ class ManualPapController extends Controller
      * own character_id as the "main".
      *
      * @param int[] $characterIds
-     * @return \Illuminate\Support\Collection  each item: ['char_id', 'main_char_id', 'corporation_id']
+     * @return \Illuminate\Support\Collection  each item: ['char_id', 'main_char_id', 'main_char_name', 'corporation_id', 'corporation_name', 'alliance_name', 'has_token']
      */
     protected function resolveCharactersToMains(array $characterIds): \Illuminate\Support\Collection
     {
@@ -380,6 +401,47 @@ class ManualPapController extends Controller
             }
         }
 
+        // Collect all unique main_char_ids and original char_ids for name lookups
+        $allMainCharIds = [];
+        foreach ($charToUser as $charId => $userId) {
+            $allMainCharIds[] = (int) ($userToMainChar[$userId] ?? $charId);
+        }
+        // Also include char_ids that have no user (they become their own "main")
+        foreach ($characterIds as $charId) {
+            if (!isset($charToUser[$charId])) {
+                $allMainCharIds[] = (int) $charId;
+            }
+        }
+        $allMainCharIds = array_unique($allMainCharIds);
+
+        // Load main character names
+        $charNames = DB::table('character_infos')
+            ->whereIn('character_id', $allMainCharIds)
+            ->pluck('name', 'character_id')
+            ->toArray();
+
+        // Load corporation names
+        $corpIds = array_unique(array_values($charToCorp));
+        $corpNames = DB::table('corporation_infos')
+            ->whereIn('corporation_id', $corpIds)
+            ->pluck('name', 'corporation_id')
+            ->toArray();
+
+        // Load alliance names via character_affiliations
+        $affiliations = DB::table('character_affiliations')
+            ->whereIn('character_id', $allMainCharIds)
+            ->pluck('alliance_id', 'character_id')
+            ->toArray();
+
+        $allianceIds = array_unique(array_filter(array_values($affiliations)));
+        $allianceNames = [];
+        if (!empty($allianceIds)) {
+            $allianceNames = DB::table('alliance_infos')
+                ->whereIn('alliance_id', $allianceIds)
+                ->pluck('name', 'alliance_id')
+                ->toArray();
+        }
+
         // Build resolved collection
         $results = collect();
         foreach ($characterIds as $charId) {
@@ -388,10 +450,17 @@ class ManualPapController extends Controller
                 ? ((int) ($userToMainChar[$userId] ?? $charId))
                 : (int) $charId;
 
+            $corpId = (int) ($charToCorp[$charId] ?? 0);
+            $allianceId = $affiliations[$mainCharId] ?? null;
+
             $results->push([
-                'char_id'      => (int) $charId,
-                'main_char_id' => $mainCharId,
-                'corporation_id' => (int) ($charToCorp[$charId] ?? 0),
+                'char_id'         => (int) $charId,
+                'main_char_id'    => $mainCharId,
+                'main_char_name'  => $charNames[$mainCharId] ?? ('Unknown #' . $mainCharId),
+                'corporation_id'  => $corpId,
+                'corporation_name' => $corpNames[$corpId] ?? ('Unknown Corp #' . $corpId),
+                'alliance_name'   => $allianceId ? ($allianceNames[$allianceId] ?? null) : null,
+                'has_token'       => $userId !== null,
             ]);
         }
 

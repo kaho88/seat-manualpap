@@ -66,7 +66,9 @@
                                     <tr>
                                         <th>#</th>
                                         <th>{{ trans('manualpap::manualpap.report_character') }}</th>
-                                        <th>{{ trans('manualpap::manualpap.report_char_id') }}</th>
+                                        <th>{{ trans('manualpap::manualpap.inactive_corporation') }}</th>
+                                        <th>{{ trans('manualpap::manualpap.inactive_alliance') }}</th>
+                                        <th>{{ trans('manualpap::manualpap.inactive_token') }}</th>
                                         <th>{{ trans('manualpap::manualpap.report_total_paps') }}</th>
                                     </tr>
                                 </thead>
@@ -75,14 +77,22 @@
                                         <tr>
                                             <td>{{ $i + 1 }}</td>
                                             <td>{{ $row['character_name'] }}</td>
-                                            <td>{{ $row['character_id'] }}</td>
+                                            <td>{{ $row['corporation_name'] ?? '-' }}</td>
+                                            <td>{{ $row['alliance_name'] ?? '-' }}</td>
+                                            <td>
+                                                @if($row['has_token'])
+                                                    <span style="color: #28a745; font-weight: bold;">&#10003;</span>
+                                                @else
+                                                    <span style="color: #dc3545; font-weight: bold;">&#10007;</span>
+                                                @endif
+                                            </td>
                                             <td><strong>{{ $row['total_paps'] }}</strong></td>
                                         </tr>
                                     @endforeach
                                 </tbody>
                                 <tfoot>
                                     <tr class="table-active">
-                                        <td colspan="3"><strong>{{ trans('manualpap::manualpap.report_total') }}</strong></td>
+                                        <td colspan="5"><strong>{{ trans('manualpap::manualpap.report_total') }}</strong></td>
                                         <td><strong>{{ array_sum(array_column($results, 'total_paps')) }}</strong></td>
                                     </tr>
                                 </tfoot>
