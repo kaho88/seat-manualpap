@@ -1,5 +1,5 @@
 {
-    "name": "hermesdj/seat-manualpap",
+    "name": "kaho88/seat-manualpap",
     "description": "Manual PAP insertion plugin for SeAT (works with seat-calendar).",
     "type": "seat-plugin",
     "autoload": {
