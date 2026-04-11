@@ -30,12 +30,9 @@
                         <div class="form-group mr-2">
                             <label for="year" class="mr-1">{{ trans('manualpap::manualpap.report_year') }}</label>
                             <select name="year" id="year" class="form-control">
-                                @foreach($availableMonths as $am)
-                                    @if(!$loop->first && $am->year != $loop->item->year)
-                                        {{-- grouped by year --}}
-                                    @endif
-                                    <option value="{{ $am->year }}" {{ $am->year == $year ? 'selected' : '' }}>
-                                        {{ $am->year }}
+                                @foreach($availableMonths->groupBy('year') as $groupYear => $months)
+                                    <option value="{{ $groupYear }}" {{ $groupYear == $year ? 'selected' : '' }}>
+                                        {{ $groupYear }}
                                     </option>
                                 @endforeach
                                 @if($availableMonths->where('year', now()->year)->isEmpty())
