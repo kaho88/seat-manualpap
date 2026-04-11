@@ -10,6 +10,7 @@ use Illuminate\View\View;
 use Seat\Eveapi\Models\Character\CharacterInfo;
 use Seat\Kassie\Calendar\Models\Operation;
 use Seat\Kassie\Calendar\Models\Tag;
+use Seat\ManualPap\Models\CharacterBlocklist;
 use Seat\ManualPap\Models\CorporationWhitelist;
 use Seat\Web\Models\User;
 
@@ -23,6 +24,16 @@ class ManualPapController extends Controller
     public static function getWhitelistedCorpIds(): array
     {
         return CorporationWhitelist::pluck('corporation_id')->toArray();
+    }
+
+    /**
+     * Get blocked character IDs from the blocklist.
+     *
+     * @return int[]
+     */
+    public static function getBlockedCharIds(): array
+    {
+        return CharacterBlocklist::pluck('character_id')->toArray();
     }
 
     // -------------------------------------------------------
@@ -195,9 +206,11 @@ class ManualPapController extends Controller
             ->unique()
             ->toArray();
 
-        // Step 4: Build inactive list - unique mains NOT in the active set
+        // Step 4: Build inactive list - unique mains NOT in the active set and NOT on blocklist
+        $blockedCharIds = self::getBlockedCharIds();
         $uniqueMains = $resolved->unique('main_char_id');
-        $inactive = $uniqueMains->filter(fn($r) => !in_array($r['main_char_id'], $activeMainIds));
+        $inactive = $uniqueMains->filter(fn($r) => !in_array($r['main_char_id'], $activeMainIds))
+            ->filter(fn($r) => !in_array($r['main_char_id'], $blockedCharIds));
 
         if ($inactive->isEmpty()) {
             return [];

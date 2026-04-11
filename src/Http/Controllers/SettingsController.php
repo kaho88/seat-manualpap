@@ -6,7 +6,9 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
+use Seat\ManualPap\Models\CharacterBlocklist;
 use Seat\ManualPap\Models\CorporationWhitelist;
+use Seat\Eveapi\Models\Character\CharacterInfo;
 
 class SettingsController extends Controller
 {
@@ -21,7 +23,14 @@ class SettingsController extends Controller
             ->pluck('name', 'corporation_id')
             ->toArray();
 
-        return view('manualpap::settings', compact('corporations', 'corpNames'));
+        // Blocklist
+        $blocklist = CharacterBlocklist::all();
+        $blockCharIds = $blocklist->pluck('character_id')->toArray();
+        $blockCharNames = CharacterInfo::whereIn('character_id', $blockCharIds)
+            ->pluck('name', 'character_id')
+            ->toArray();
+
+        return view('manualpap::settings', compact('corporations', 'corpNames', 'blocklist', 'blockCharNames'));
     }
 
     public function add(): RedirectResponse
@@ -70,5 +79,48 @@ class SettingsController extends Controller
 
         return redirect()->route('manualpap.settings')
             ->with('success', trans('manualpap::manualpap.settings_corp_removed'));
+    }
+
+    public function addBlocklist(): RedirectResponse
+    {
+        $data = request()->validate([
+            'character_name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $name = trim($data['character_name']);
+
+        // Search by exact name first, then LIKE
+        $char = CharacterInfo::where('name', $name)->first();
+
+        if (!$char) {
+            $char = CharacterInfo::where('name', 'LIKE', '%' . $name . '%')->first();
+        }
+
+        if (!$char) {
+            return redirect()->route('manualpap.settings')
+                ->withInput()
+                ->withErrors(['character_name' => trans('manualpap::manualpap.blocklist_not_found')]);
+        }
+
+        if (CharacterBlocklist::find($char->character_id)) {
+            return redirect()->route('manualpap.settings')
+                ->withInput()
+                ->withErrors(['character_name' => trans('manualpap::manualpap.blocklist_exists')]);
+        }
+
+        CharacterBlocklist::create([
+            'character_id' => $char->character_id,
+        ]);
+
+        return redirect()->route('manualpap.settings')
+            ->with('success', trans('manualpap::manualpap.blocklist_added', ['name' => $char->name]));
+    }
+
+    public function removeBlocklist(int $characterId): RedirectResponse
+    {
+        CharacterBlocklist::destroy($characterId);
+
+        return redirect()->route('manualpap.settings')
+            ->with('success', trans('manualpap::manualpap.blocklist_removed'));
     }
 }

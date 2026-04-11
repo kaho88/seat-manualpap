@@ -63,4 +63,16 @@ Route::group([
         'middleware' => 'can:manualpap.use',
     ]);
 
+    Route::post('/settings/blocklist/add', [
+        'as' => 'manualpap.blocklist.add',
+        'uses' => 'SettingsController@addBlocklist',
+        'middleware' => 'can:manualpap.use',
+    ]);
+
+    Route::post('/settings/blocklist/remove/{characterId}', [
+        'as' => 'manualpap.blocklist.remove',
+        'uses' => 'SettingsController@removeBlocklist',
+        'middleware' => 'can:manualpap.use',
+    ]);
+
 });

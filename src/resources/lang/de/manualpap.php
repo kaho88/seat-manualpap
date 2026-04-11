@@ -67,4 +67,19 @@ return [
     'settings_corp_added'       => 'Corporation ":name" zur Whitelist hinzugefügt.',
     'settings_corp_removed'     => 'Corporation aus der Whitelist entfernt.',
     'settings_no_corps'         => 'Noch keine Corporations in der Whitelist. Füge oben eine hinzu.',
+
+    // Blocklist
+    'blocklist_title'           => 'Character-Blocklist',
+    'blocklist_info'            => 'Characters auf dieser Liste werden vom Inaktiv-Report ausgeschlossen. Nützlich für Alts oder Characters, die nicht für Inaktivität markiert werden sollen.',
+    'blocklist_placeholder'     => 'Character Name...',
+    'blocklist_add'             => 'Character hinzufügen',
+    'blocklist_remove'          => 'Entfernen',
+    'blocklist_confirm_remove'  => 'Diesen Character von der Blocklist entfernen?',
+    'blocklist_char_name'       => 'Character Name',
+    'blocklist_char_id'         => 'Character ID',
+    'blocklist_not_found'       => 'Character nicht gefunden. Bitte den genauen Namen prüfen.',
+    'blocklist_exists'          => 'Dieser Character ist bereits auf der Blocklist.',
+    'blocklist_added'           => 'Character ":name" zur Blocklist hinzugefügt.',
+    'blocklist_removed'         => 'Character von der Blocklist entfernt.',
+    'blocklist_empty'           => 'Noch keine Characters auf der Blocklist. Füge oben einen hinzu.',
 ];
