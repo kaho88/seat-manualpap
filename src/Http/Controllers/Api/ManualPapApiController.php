@@ -9,24 +9,15 @@ use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\DB;
 use Seat\Kassie\Calendar\Models\Operation;
 use Seat\ManualPap\Http\Controllers\ManualPapController;
-use Seat\Web\Models\User;
 
 class ManualPapApiController extends Controller
 {
     public function store(Request $request): JsonResponse
     {
-        $user = $this->resolveUser($request);
-
-        if (!$user) {
+        if (!$this->validateToken($request)) {
             return response()->json([
                 'error' => 'Unauthorized. Provide a valid X-Token header.',
             ], 401);
-        }
-
-        if (!$user->isAdmin() && !$user->can('manualpap.api')) {
-            return response()->json([
-                'error' => 'Forbidden. User does not have manualpap.api permission.',
-            ], 403);
         }
 
         $data = $request->validate([
@@ -71,18 +62,32 @@ class ManualPapApiController extends Controller
     }
 
     /**
-     * Resolve a SeAT user from the X-Token header.
-     * Uses the same token column as SeAT's built-in API authentication.
+     * Validate the X-Token header against the api_tokens table.
+     * Tokens are instance-wide and optionally restricted by source IP.
      */
-    protected function resolveUser(Request $request): ?User
+    protected function validateToken(Request $request): bool
     {
         $token = $request->header('X-Token', '');
 
         if (empty($token)) {
-            return null;
+            return false;
         }
 
-        return User::where('api_token', $token)->first();
+        $record = DB::table('api_tokens')->where('token', $token)->first();
+
+        if (!$record) {
+            return false;
+        }
+
+        // Check IP restriction if allowed_src is set (0.0.0.0 means allow all)
+        if ($record->allowed_src && $record->allowed_src !== '0.0.0.0') {
+            $clientIp = $request->ip();
+            if ($clientIp !== $record->allowed_src) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     protected function resolveOperationValue(int $operationId): int
@@ -102,18 +107,10 @@ class ManualPapApiController extends Controller
      */
     public function report(Request $request, int $year, int $month): JsonResponse
     {
-        $user = $this->resolveUser($request);
-
-        if (!$user) {
+        if (!$this->validateToken($request)) {
             return response()->json([
                 'error' => 'Unauthorized. Provide a valid X-Token header.',
             ], 401);
-        }
-
-        if (!$user->isAdmin() && !$user->can('manualpap.api')) {
-            return response()->json([
-                'error' => 'Forbidden. User does not have manualpap.api permission.',
-            ], 403);
         }
 
         $webController = new ManualPapController();
@@ -136,18 +133,10 @@ class ManualPapApiController extends Controller
      */
     public function inactive(Request $request): JsonResponse
     {
-        $user = $this->resolveUser($request);
-
-        if (!$user) {
+        if (!$this->validateToken($request)) {
             return response()->json([
                 'error' => 'Unauthorized. Provide a valid X-Token header.',
             ], 401);
-        }
-
-        if (!$user->isAdmin() && !$user->can('manualpap.api')) {
-            return response()->json([
-                'error' => 'Forbidden. User does not have manualpap.api permission.',
-            ], 403);
         }
 
         $webController = new ManualPapController();
