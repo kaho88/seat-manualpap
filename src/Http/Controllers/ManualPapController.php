@@ -208,9 +208,10 @@ class ManualPapController extends Controller
 
         // Step 4: Build inactive list - unique mains NOT in the active set and NOT on blocklist
         $blockedCharIds = self::getBlockedCharIds();
+        $blockedMainIds = $this->resolveBlockedToMains($blockedCharIds);
         $uniqueMains = $resolved->unique('main_char_id');
         $inactive = $uniqueMains->filter(fn($r) => !in_array($r['main_char_id'], $activeMainIds))
-            ->filter(fn($r) => !in_array($r['main_char_id'], $blockedCharIds));
+            ->filter(fn($r) => !in_array($r['main_char_id'], $blockedMainIds));
 
         if ($inactive->isEmpty()) {
             return [];
@@ -476,6 +477,52 @@ class ManualPapController extends Controller
         }
 
         return $results;
+    }
+
+    /**
+     * Resolve a list of blocked character_ids (which may be alts) to their main character IDs.
+     * Characters not registered in SeAT are returned as-is (they are their own "main").
+     *
+     * @param int[] $characterIds
+     * @return int[]  unique main character IDs
+     */
+    protected function resolveBlockedToMains(array $characterIds): array
+    {
+        if (empty($characterIds)) {
+            return [];
+        }
+
+        $charToUser = DB::table('refresh_tokens')
+            ->whereIn('character_id', $characterIds)
+            ->pluck('user_id', 'character_id')
+            ->toArray();
+
+        $userIds = array_unique(array_values($charToUser));
+        $userToMainChar = [];
+        if (!empty($userIds)) {
+            $users = User::whereIn('id', $userIds)->get()->keyBy('id');
+
+            $allUserChars = DB::table('refresh_tokens')
+                ->whereIn('user_id', $userIds)
+                ->get()
+                ->groupBy('user_id')
+                ->map(fn($items) => $items->pluck('character_id')->toArray());
+
+            foreach ($users as $userId => $user) {
+                $userToMainChar[$userId] = $user->main_character_id
+                    ?: ($allUserChars[$userId][0] ?? null);
+            }
+        }
+
+        $mainIds = [];
+        foreach ($characterIds as $charId) {
+            $userId = $charToUser[$charId] ?? null;
+            $mainIds[] = $userId
+                ? (int) ($userToMainChar[$userId] ?? $charId)
+                : (int) $charId;
+        }
+
+        return array_unique($mainIds);
     }
 
     // -------------------------------------------------------
