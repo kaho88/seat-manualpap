@@ -37,23 +37,23 @@ class ManualPapServiceProvider extends AbstractSeatPlugin
         $this->loadTranslationsFrom(__DIR__ . '/resources/lang', 'manualpap');
     }
 
-    public function getName(): string
-    {
-        return 'Manual PAP';
-    }
+public function getName(): string
+{
+    return 'Manual PAP';
+}
 
-    public function getPackageRepositoryUrl(): string
-    {
-        return 'https://github.com/hermesdj/seat-manual-pap';
-    }
+public function getPackageRepositoryUrl(): string
+{
+    return 'https://github.com/kaho88/seat-manualpap';
+}
 
-    public function getPackagistPackageName(): string
-    {
-        return 'seat-manual-pap';
-    }
+public function getPackagistPackageName(): string
+{
+    return 'seat-manualpap';
+}
 
-    public function getPackagistVendorName(): string
-    {
-        return 'hermesdj';
-    }
+public function getPackagistVendorName(): string
+{
+    return 'kaho88';
+}
 }
