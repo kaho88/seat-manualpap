@@ -11,18 +11,22 @@
     ],
     "homepage": "https://github.com/kaho88/seat-manualpap",
     "license": "GPL-3.0-only",
+
     "autoload": {
         "psr-4": {
             "Seat\\ManualPap\\": "src/"
         }
     },
+
     "require": {
         "eveseat/web": "^5",
         "eveseat/eveapi": "^5",
         "eveseat/services": "^5"
     },
-    "minimum-stability": "dev",
+
+    "minimum-stability": "stable",
     "prefer-stable": true,
+
     "extra": {
         "laravel": {
             "providers": [
