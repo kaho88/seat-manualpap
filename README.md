@@ -19,7 +19,9 @@ This plugin allows you to add PAP entries manually and is designed to work toget
 
 ### Advanced Features
 
-- Import FATs from AllianceAuth (copy & paste) and automatically generate OPs and PAPs for monthly tracking  
+- Add the Corp that needs to be checked in the Config Section
+- Whitelist: remove specific Users from Reports (we all know CEOs are AFK)
+- Import FATs from AllianceAuth (copy & paste) and automatically generate OPs and PAPs for monthly tracking
 - Inactive user detection – identify players with no FAT activity for 3 months  
 - Monthly PAP reports – overview of all SeAT PAPs in a structured report view  
 
