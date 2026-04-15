@@ -35,3 +35,6 @@ This plugin allows you to add PAP entries manually and is designed to work toget
 ## Installation
 
 Install via your .env file: kaho88/seat-manualpap
+
+## Packagist
+https://packagist.org/packages/kaho88/seat-manualpap
