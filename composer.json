@@ -15,7 +15,7 @@
         "eveseat/eveapi": "^5",
         "eveseat/services": "^5"
     },
-    "license": "GPL-2.0-or-later",
+    "license": "GPL-3.0-or-later",
     "minimum-stability": "dev",
     "prefer-stable": true,
     "extra": {
