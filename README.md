@@ -32,7 +32,4 @@ This plugin allows you to add PAP entries manually and is designed to work toget
 
 ## Installation
 
-Install via Composer inside your SeAT installation:
-
-```bash
-composer require kaho88/seat-manualpap
+Install via your .env file: kaho88/seat-manualpap
